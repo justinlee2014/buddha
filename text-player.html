@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>文本播放器 ver0.2</title>
+    <style>
+        #content {
+            margin: 20px;
+            padding: 20px;
+            line-height: 1.5em;
+            transition: all 0.3s;
+            overflow: auto;
+            min-height: 150px;
+            border: 1px solid #666;
+            background-color: #000000; /* 默认黑色背景 */
+            color: #ffff00; /* 默认黄色字体 */
+        }
+        .controls {
+            margin: 20px;
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+        }
+        .config-group {
+            border: 1px solid #666;
+            padding: 10px;
+            border-radius: 5px;
+            background: #f0f0f0;
+        }
+        button { min-width: 80px; padding: 5px; }
+    </style>
+</head>
+<body>
+    <div id="content">请加载转换后的文本文件</div>
+    
+    <div class="controls">
+        <div class="config-group">
+            <input type="file" id="fileInput" accept=".txt">
+            <button onclick="loadFile()">加载文件</button>
+            <br><br>
+            播放速度(字/秒): 
+            <input type="number" id="speedRate" value="10" min="1" style="width: 60px">
+            <br>
+            最大行数: <input type="number" id="maxLines" value="5" min="1" style="width: 60px">
+        </div>
+
+        <div class="config-group">
+            字体大小: <input type="number" id="fontSize" value="24" min="8" style="width: 60px">px
+            <br>
+            字体: 
+            <select id="fontSelect" onchange="applyStyles()">
+                <option value="SimSun">宋体</option>
+                <option value="Microsoft YaHei">微软雅黑</option>
+                <option value="KaiTi">楷体</option>
+            </select>
+            <br><br>
+            跳转到: <input type="text" id="jumpTo" style="width: 80px">
+            <button onclick="jump()">跳转</button>
+        </div>
+
+        <div class="config-group">
+            背景颜色: <input type="color" id="bgColor" value="#000000" onchange="applyStyles()">
+            <br>
+            文字颜色: <input type="color" id="textColor" value="#ffff00" onchange="applyStyles()">
+            <br><br>
+            <button onclick="togglePlay()" id="playBtn">▶ 播放</button>
+            <button onclick="stop()">⏹ 停止</button>
+        </div>
+    </div>
+
+    <script>
+        let segments = [];
+        let currentIndex = 0;
+        let timer = null;
+        let isPlaying = false;
+
+        // 解析文件内容
+        function parseFile(content) {
+            segments = [];
+            const lines = content.split('\n');
+            
+            lines.forEach(line => {
+                const trimmed = line.trim();
+                if(trimmed) {
+                    const colonIndex = trimmed.indexOf(':');
+                    if(colonIndex > 0) {
+                        segments.push({
+                            label: trimmed.substr(0, colonIndex).trim().toLowerCase(),
+                            text: trimmed.substr(colonIndex + 1).trim()
+                        });
+                    }
+                }
+            });
+        }
+
+        // 计算显示时长
+        function calculateDuration(text) {
+            const speed = parseInt(document.getElementById('speedRate').value) || 10;
+            const chnChars = text.match(/[\u4e00-\u9fa5]/g) || [];
+            return Math.max(1000, (chnChars.length / speed) * 1000);
+        }
+
+        // 应用样式设置
+        function applyStyles() {
+            const contentDiv = document.getElementById('content');
+            contentDiv.style.fontSize = document.getElementById('fontSize').value + 'px';
+            contentDiv.style.fontFamily = document.getElementById('fontSelect').value;
+            contentDiv.style.color = document.getElementById('textColor').value;
+            contentDiv.style.backgroundColor = document.getElementById('bgColor').value;
+            contentDiv.style.maxHeight = `calc(${document.getElementById('maxLines').value} * 1.5em)`;
+        }
+
+        // 文件加载
+        function loadFile() {
+            const file = document.getElementById('fileInput').files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                parseFile(e.target.result);
+                if(segments.length > 0) {
+                    showSegment(0);
+                } else {
+                    document.getElementById('content').innerHTML = "文件格式错误";
+                }
+            };
+            reader.readAsText(file, 'UTF-8');
+        }
+
+        // 显示指定段落
+        function showSegment(index) {
+            if(index < 0 || index >= segments.length) return;
+            
+            currentIndex = index;
+            const segment = segments[index];
+            document.getElementById('content').innerHTML = `
+                <div style="color: #888; margin-bottom: 10px">${segment.label}</div>
+                <div>${segment.text}</div>
+            `;
+            applyStyles();
+        }
+
+        // 播放控制
+        function togglePlay() {
+            const btn = document.getElementById('playBtn');
+            if(isPlaying) {
+                clearTimeout(timer);
+                btn.textContent = '▶ 继续';
+                isPlaying = false;
+            } else {
+                btn.textContent = '⏸ 暂停';
+                playNext();
+                isPlaying = true;
+            }
+        }
+
+        function playNext() {
+            if(currentIndex >= segments.length - 1) {
+                stop();
+                return;
+            }
+            
+            const nextIndex = currentIndex + 1;
+            const duration = calculateDuration(segments[nextIndex].text);
+            
+            timer = setTimeout(() => {
+                showSegment(nextIndex);
+                playNext();
+            }, duration);
+        }
+
+        function stop() {
+            clearTimeout(timer);
+            isPlaying = false;
+            document.getElementById('playBtn').textContent = '▶ 播放';
+            showSegment(0);
+        }
+
+        // 跳转功能
+        function jump() {
+            const target = document.getElementById('jumpTo').value.trim().toLowerCase();
+            if(!target) return;
+
+            const index = segments.findIndex(s => s.label === target);
+            if(index !== -1) {
+                stop();
+                showSegment(index);
+            } else {
+                alert("未找到指定标签");
+            }
+        }
+    </script>
+</body>
+</html>

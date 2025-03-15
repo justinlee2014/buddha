@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <!-- 关键视口设置[[2]][[3]][[5]] -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>移动端文本播放器 ver0.3</title>
+    <style>
+        :root {
+            --primary-color: #2196F3;
+            --bg-color: #000;
+            --text-color: #FFEB3B;
+        }
+
+        /* 响应式基础设置[[13]][[14]][[16]] */
+        html {
+            font-size: 16px; /* 基准值 */
+            -webkit-text-size-adjust: 100%;
+            -ms-text-size-adjust: 100%;
+        }
+
+        body {
+            margin: 0;
+            padding: 1rem;
+            background: #f5f5f5;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* 文本显示区域（移动端优化） */
+        #text-container {
+            flex: 1;
+            background: var(--bg-color);
+            color: var(--text-color);
+            padding: 1rem;
+            border-radius: 0.5rem;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch; /* 移动端滚动优化 */
+            font-size: 1.2rem;
+            line-height: 1.8;
+        }
+
+        /* 控制面板响应式布局[[9]][[14]] */
+        .controls {
+            margin-top: 1rem;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 0.5rem;
+        }
+
+        .control-group {
+            background: white;
+            padding: 0.5rem;
+            border-radius: 0.5rem;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        /* 按钮触控优化[[8]] */
+        button {
+            width: 100%;
+            padding: 0.8rem;
+            font-size: 1rem;
+            border: none;
+            border-radius: 0.25rem;
+            background: var(--primary-color);
+            color: white;
+            touch-action: manipulation; /* 消除点击延迟 */
+        }
+
+        /* 移动端横屏优化[[7]][[12]] */
+        @media (orientation: landscape) {
+            body {
+                flex-direction: row;
+                gap: 1rem;
+            }
+            #text-container {
+                flex: 2;
+            }
+            .controls {
+                flex: 1;
+                margin-top: 0;
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* 小屏幕优化[[4]][[9]] */
+        @media (max-width: 480px) {
+            html {
+                font-size: 14px;
+            }
+            .controls {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="text-container">请加载文本文件...</div>
+    
+    <div class="controls">
+        <div class="control-group">
+            <input type="file" id="fileInput" hidden accept=".txt">
+            <button onclick="document.getElementById('fileInput').click()">📁 加载文件</button>
+        </div>
+        
+        <div class="control-group">
+            <button id="playBtn" onclick="togglePlay()">▶ 播放</button>
+            <button onclick="stopPlayback()">⏹ 停止</button>
+        </div>
+
+        <div class="control-group">
+            <label>速度：<input type="range" id="speed" min="1" max="30" value="10"></label>
+            <label>字体：<input type="range" id="fontSize" min="12" max="32" value="16"></label>
+        </div>
+    </div>
+
+    <script>
+        // 屏幕适配核心逻辑[[6]][[10]][[12]]
+        (function() {
+            const baseWidth = 375; // 设计基准宽度
+            const docEl = document.documentElement;
+            
+            function setRemUnit() {
+                const clientWidth = Math.min(docEl.clientWidth, 768); // 最大适配768px
+                const rem = (clientWidth / baseWidth) * 16;
+                docEl.style.fontSize = rem + 'px';
+            }
+            
+            setRemUnit();
+            window.addEventListener('resize', setRemUnit);
+            window.addEventListener('orientationchange', setRemUnit);
+        })();
+
+        // 播放器核心逻辑
+        let segments = [];
+        let currentIndex = 0;
+        let isPlaying = false;
+        let rafId = null;
+
+        document.getElementById('fileInput').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            const reader = new FileReader();
+            
+            reader.onload = function(e) {
+                parseContent(e.target.result);
+                currentIndex = 0;
+                updateDisplay();
+            };
+            reader.readAsText(file);
+        });
+
+        function parseContent(text) {
+            segments = text.split('\n').filter(line => line.trim()).map(line => {
+                const [label, ...content] = line.split(':');
+                return {
+                    label: label.trim(),
+                    content: content.join(':').trim()
+                };
+            });
+        }
+
+        function updateDisplay() {
+            const container = document.getElementById('text-container');
+            const segment = segments[currentIndex];
+            
+            container.innerHTML = `
+                <div style="color:#888">${segment.label}</div>
+                <div>${segment.content}</div>
+            `;
+        }
+
+        // 播放控制（使用RAF优化性能）
+        function playStep(timestamp) {
+            if (!isPlaying) return;
+            
+            const speed = document.getElementById('speed').value;
+            const duration = 1000 / speed * segments[currentIndex].content.length;
+            
+            if (performance.now() - startTime >= duration) {
+                currentIndex = (currentIndex + 1) % segments.length;
+                updateDisplay();
+                startTime = performance.now();
+            }
+            
+            rafId = requestAnimationFrame(playStep);
+        }
+
+        function togglePlay() {
+            isPlaying = !isPlaying;
+            document.getElementById('playBtn').textContent = isPlaying ? '⏸ 暂停' : '▶ 播放';
+            
+            if (isPlaying) {
+                startTime = performance.now();
+                rafId = requestAnimationFrame(playStep);
+            } else {
+                cancelAnimationFrame(rafId);
+            }
+        }
+
+        // 字体大小控制[[7]][[9]]
+        document.getElementById('fontSize').addEventListener('input', function(e) {
+            document.getElementById('text-container').style.fontSize = e.target.value + 'px';
+        });
+    </script>
+</body>
+</html>
